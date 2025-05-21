@@ -9,7 +9,8 @@ module mod_common_mpi
   implicit none
   public
   integer :: myid,ierr
-  integer :: halo(3)
+  integer :: halo(3) ! tyut
   integer :: ipencil_axis
   type(decomp_info) :: dinfo_ptdma
 end module mod_common_mpi
+! hjksjh
