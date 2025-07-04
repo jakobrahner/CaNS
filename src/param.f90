@@ -26,6 +26,12 @@ real(rp), parameter, dimension(2,3) :: rkcoeff = reshape([32._rp/60._rp,  0._rp 
                                                           25._rp/60._rp, -17._rp/60._rp, &
                                                           45._rp/60._rp, -25._rp/60._rp], shape(rkcoeff))
 real(rp), parameter, dimension(3)   :: rkcoeff12 = rkcoeff(1,:)+rkcoeff(2,:)
+#if defined(_LES)
+real(rp), parameter :: big = huge(1.0_rp)
+real(rp), parameter :: kap_log = 0.41_rp
+real(rp), parameter :: b_log   = 5.20_rp
+real(rp), parameter :: c_smag  = 0.11_rp
+#endif
 !
 ! variables to be determined from the input file
 !
@@ -55,6 +61,10 @@ character(len=1), protected, dimension(0:1,3,3) ::  cbcvel
 real(rp)        , protected, dimension(0:1,3,3) ::   bcvel
 character(len=1), protected, dimension(0:1,3)   ::  cbcpre
 real(rp)        , protected, dimension(0:1,3)   ::   bcpre
+#if defined(_LES)
+character(len=1), protected, dimension(0:1,3)   ::  cbcsgs
+real(rp)        , protected, dimension(0:1,3)   ::   bcsgs
+#endif
 !
 real(rp), protected, dimension(3) :: bforce
 logical , protected, dimension(3) :: is_forced
@@ -62,6 +72,14 @@ real(rp), protected, dimension(3) :: velf
 !
 real(rp), protected, dimension(3) :: dl,dli
 real(rp), protected :: visc
+!
+#if defined(_LES)
+real(rp), protected :: dx,dy
+character(len=100), protected :: sgstype
+integer, protected, dimension(0:1,3) :: lwm
+real(rp), protected :: hwm
+integer, dimension(0:1,3) :: index_wm
+#endif
 !
 ! scalar input parameters
 !
@@ -129,6 +147,13 @@ contains
                   gacc, &
                   nscal, &
                   dims,ipencil_axis
+#if defined(_LES)
+    namelist /les/ &
+                  cbcsgs,bcsgs, &
+                  sgstype, &
+                  lwm, &
+                  hwm
+#endif
 #if defined(_OPENACC)
     namelist /cudecomp/ &
                        cudecomp_t_comm_backend,cudecomp_is_t_enable_nccl,cudecomp_is_t_enable_nvshmem, &
@@ -173,9 +198,24 @@ contains
         error stop
       end if
       !
+#if defined(_LES)
+      read(iunit,nml=les,iostat=ierr,iomsg=c_iomsg)
+      if( ierr /= 0 ) then
+        if(myid == 0) print*, 'Error reading les namelist: ', trim(c_iomsg)
+        if(myid == 0) print*, 'Aborting...'
+        call MPI_FINALIZE(ierr)
+        close(iunit)
+        error stop
+      end if
+#endif
+      !
       dl(:) = l(:)/(1.*ng(:))
       dli(:) = dl(:)**(-1)
       visc = visci**(-1)
+#if defined(_LES)
+      dx = dl(1)
+      dy = dl(2)
+#endif
       if(all([1,2,3] /= ipencil_axis)) then
         ipencil_axis = 1 ! default to one
         if(myid == 0) print*, 'Warning: prescribed value of `ipencil_axis` different than 1/2/3.', trim(c_iomsg)

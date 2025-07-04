@@ -31,9 +31,10 @@ module mod_initflow
     real(rp), dimension(0:,0:,0:), intent(out) :: u,v,w,p
     real(rp), allocatable, dimension(:) :: u1d
     !real(rp), allocatable, dimension(:,:) :: u2d
-    integer :: i,j,k
+    integer :: i,j,k,m
     logical :: is_noise,is_mean,is_pair
     real(rp) :: xc,yc,zcc,xf,yf,zff
+    real(rp) :: ly,lz,xi,eta,cosh_term,cos_term,term,sum_term
     real(rp), allocatable, dimension(:) :: zc2
     real(rp) :: uref,lref
     real(rp) :: ubulk,reb,retau
@@ -61,7 +62,7 @@ module mod_initflow
       is_noise = .true.
     case('iop') ! reversed 'poi'
       !
-      ! convective reference frame moving with velocit `ubulk`;
+      ! convective reference frame moving with velocity `ubulk`;
       ! walls have negative velocity equal to `ubulk` in the laboratory frame
       !
       ubulk = 0.5*abs(bcvel(0,3,1)+bcvel(1,3,1))
@@ -70,6 +71,9 @@ module mod_initflow
       is_mean = .true.
     case('zer')
       u1d(:) = 0.
+    case('zen')  ! Zero velocity field with initial noise
+      u1d(:) = 0.
+      is_noise = .true.
     case('uni')
       u1d(:) = uref
     case('log')
@@ -177,6 +181,28 @@ module mod_initflow
         call poiseuille(2*n(3),zc2/(2*l(3)),ubulk,u1d)
       end if
       is_mean = .true.
+    case('duc')
+      do k = 1,n(3)
+        do j = 1,n(2)
+          sum_term = 0._rp
+          ly = .5_rp*l(2)
+          lz = .5_rp*l(3)
+          xi  = -1._rp + (j+lo(2)-1.5_rp)*dl(2)/ly
+          eta = -1._rp + zc(k)/lz
+          do m = 0,100
+            cosh_term = cosh((2*m+1)*pi*ly/(2*lz)*xi) / &
+                        cosh((2*m+1)*pi*ly/(2*lz))
+            cos_term  = cos ((2*m+1)*pi/2*eta)
+            term = (-1._rp)**m/(2*m+1)**3*cosh_term*cos_term
+            sum_term = sum_term + term
+          end do
+          u(:,j,k) = .5_rp*lz**2*(1._rp-eta**2-4._rp*(2._rp/pi)**3*sum_term)
+          v(:,j,k) = 0._rp
+          w(:,j,k) = 0._rp
+          p(:,j,k) = 0._rp
+        end do
+      end do
+      is_mean = .true.
     case default
       if(myid == 0) print*, 'ERROR: invalid name for initial velocity field'
       if(myid == 0) print*, ''
@@ -185,7 +211,7 @@ module mod_initflow
       call MPI_FINALIZE(ierr)
       error stop
     end select
-    if(.not.any(inivel == ['tgv','tgw','ant'])) then
+    if(.not.any(inivel == ['tgv','tgw','ant','duc'])) then
       do k=1,n(3)
         do j=1,n(2)
           do i=1,n(1)
@@ -282,12 +308,16 @@ module mod_initflow
     real(rp) :: sref
     integer, dimension(3) :: n
     integer  :: ii
+    integer  :: kk
     real(rp) :: xx
+    real(rp) :: zz
+    real(rp) :: x_mid
     !
     n(:) = shape(s) - 2*1
     allocate(s1d(n(3)))
     is_noise = .false.
     is_mean  = .false.
+    x_mid = 0.5 * l(1)  ! Midpoint in physical x
     !sref = 0.
     sref = 0.5*(bcscal(0,3)+bcscal(1,3)) ! bottom and top bcs
     if(is_sforced) sref = scalf
@@ -302,6 +332,10 @@ module mod_initflow
       s1d(:) = bcscal(0,3)*(s1d(:)) + bcscal(1,3)*(1.-s1d(:))
       sref = abs(bcscal(1,3) - bcscal(0,3))
     case('dhc')
+      s1d(:) = 0._rp
+    case('ray')
+      s1d(:) = 0._rp
+    case('lxc')
       s1d(:) = 0._rp
     case('tbl')
       sref = 1.
@@ -331,6 +365,32 @@ module mod_initflow
             ii = i+lo(1)-1
             xx = (ii-0.5)*dl(1)/l(1)
             s(i,j,k) = ((1.-xx)*bcscal(0,1) + xx*bcscal(1,1))
+          end do
+        end do
+      end do
+    end if
+    !
+    if(trim(iniscal) == 'ray') then
+      do i=1,n(1)
+        do j=1,n(2)
+          do k=1,n(3)
+            kk = k+lo(3)-1
+            zz = (kk-0.5)*dl(3)/l(3)
+            s(i,j,k) = ((1.-zz)*bcscal(0,3) + zz*bcscal(1,3))
+          end do
+        end do
+      end do
+    end if
+    !
+    if(trim(iniscal) == 'lxc') then
+      do k=1,n(3)
+        do j=1,n(2)
+          do i=1,n(1)
+            ii = i+lo(1)-1
+            xx = (ii-0.5)*dl(1)  ! Physical x-position of cell center (in absolute units)
+            if (xx < x_mid) then
+              s(i,j,k) = 1.0
+            end if
           end do
         end do
       end do

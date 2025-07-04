@@ -12,6 +12,7 @@ src/.depend.mk
 *dSYM
 *.xdmf
 *.xmf
+my_cases/
 cans
 run/
 src/data/*.*

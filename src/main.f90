@@ -83,10 +83,27 @@ program cans
   use mod_utils          , only: device_memory_footprint
 #endif
   use mod_types
+#if defined(_LES)
+  use mod_bound          , only: boundp_les,bounduvw_les,cmpt_rhs_b,updt_rhs_b,initbc
+  use mod_chkdt          , only: chkdt_les
+  use mod_initmpi        , only: initmpi_les
+  use mod_sgs            , only: cmpt_sgs
+  use mod_dist           , only: wall_dist
+  use mod_rk             , only: rk_les
+  use mod_output         , only: out0d,gen_alias,out1d,out1d_chan,out1d_single_point_chan,out2d,out3d,write_log_output, &
+                                 write_visu_2d,write_visu_3d,out2d_duct
+  use mod_param          , only: cbcsgs, bcsgs, &
+                                 sgstype,lwm,hwm,index_wm
+  use mod_sanity         , only: test_sanity_input_les
+  use mod_typedef        , only: bound
+#endif
   use omp_lib
   implicit none
   integer , dimension(3) :: lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z
   real(rp), target, allocatable, dimension(:,:,:) :: u,v,w,p,pp
+#if defined(_LES)
+  real(rp), target, allocatable, dimension(:,:,:) :: visct
+#endif
   real(rp), allocatable, dimension(:,:,:) :: dudtrko,dvdtrko,dwdtrko
   real(rp), dimension(0:1,3) :: tauxo,tauyo,tauzo
   real(rp), dimension(3) :: f
@@ -102,6 +119,9 @@ program cans
   logical :: is_ptdma_update_p
   real(rp) :: normfftp
   type(rhs_bound) :: rhsbp
+#if defined(_LES)
+  type(rhs_bound) :: bcu,bcv,bcw,bcp,bcs,bcuf,bcvf,bcwf,bcu_mag,bcv_mag,bcw_mag
+#endif
   real(rp) :: alpha
 #if !defined(_OPENACC)
   type(C_PTR), dimension(2,2) :: arrplanu,arrplanv,arrplanw
@@ -143,7 +163,7 @@ program cans
   end type arr_ptr
   type(arr_ptr)    , allocatable, dimension(:) ::   io_vars
   character(len=10), allocatable, dimension(:) :: c_io_vars
-  integer :: k,kk
+  integer :: i,j,k,kk
   logical :: is_done,kill
   !
   call MPI_INIT(ierr)
@@ -156,7 +176,11 @@ program cans
   ! initialize MPI/OpenMP
   !
   !$ call omp_set_num_threads(omp_get_max_threads())
+#if defined(_LES)
+  call initmpi_les(ng,dims,sgstype,cbcvel,cbcpre,lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z,nb,is_bound)
+#else
   call initmpi(ng,dims,cbcpre,lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z,nb,is_bound)
+#endif
   twi = MPI_WTIME()
   savecounter = 0
   !
@@ -167,6 +191,9 @@ program cans
            w( 0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            p( 0:n(1)+1,0:n(2)+1,0:n(3)+1), &
            pp(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+#if defined(_LES)
+  allocate(visct(0:n(1)+1,0:n(2)+1,0:n(3)+1))
+#endif
   allocate(dudtrko(n(1),n(2),n(3)), &
            dvdtrko(n(1),n(2),n(3)), &
            dwdtrko(n(1),n(2),n(3)))
@@ -198,6 +225,42 @@ program cans
   allocate(rhsbp%x(n(2),n(3),0:1), &
            rhsbp%y(n(1),n(3),0:1), &
            rhsbp%z(n(1),n(2),0:1))
+#if defined(_LES)
+  ! ghost cells necessary
+  allocate(bcu%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcv%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcw%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcu%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcv%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcw%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcu%z(0:n(1)+1,0:n(2)+1,0:1), &
+           bcv%z(0:n(1)+1,0:n(2)+1,0:1), &
+           bcw%z(0:n(1)+1,0:n(2)+1,0:1), &
+           bcp%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcp%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcp%z(0:n(1)+1,0:n(2)+1,0:1), &
+           bcs%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcs%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcs%z(0:n(1)+1,0:n(2)+1,0:1))
+  allocate(bcuf%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcvf%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcwf%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcuf%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcvf%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcwf%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcuf%z(0:n(1)+1,0:n(2)+1,0:1), &
+           bcvf%z(0:n(1)+1,0:n(2)+1,0:1), &
+           bcwf%z(0:n(1)+1,0:n(2)+1,0:1))
+  allocate(bcu_mag%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcv_mag%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcw_mag%x(0:n(2)+1,0:n(3)+1,0:1), &
+           bcu_mag%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcv_mag%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcw_mag%y(0:n(1)+1,0:n(3)+1,0:1), &
+           bcu_mag%z(0:n(1)+1,0:n(2)+1,0:1), &
+           bcv_mag%z(0:n(1)+1,0:n(2)+1,0:1), &
+           bcw_mag%z(0:n(1)+1,0:n(2)+1,0:1))
+#endif
   if(is_impdiff) then
     allocate(lambdaxyu(n_z(1),n_z(2)), &
              lambdaxyv(n_z(1),n_z(2)), &
@@ -286,7 +349,32 @@ program cans
   !
   ! test input files before proceeding with the calculation
   !
+#if defined(_LES)
+  call test_sanity_input_les(ng,dims,sgstype,stop_type,cbcvel,cbcpre,cbcsgs,bcvel,bcpre,bcsgs, &
+                             n,is_bound,lwm,l,zc,dl,hwm,is_forced)
+#else
   call test_sanity_input(ng,dims,stop_type,cbcvel,cbcpre,bcvel,bcpre,is_forced)
+#endif
+  !
+#if defined(_LES)
+  !
+  ! initialize boundary condition variables
+  !
+  call initbc(sgstype,cbcvel,bcvel,bcpre,bcsgs,bcu,bcv,bcw,bcp,bcs,bcu_mag,bcv_mag,bcw_mag, &
+              bcuf,bcvf,bcwf,n,is_bound,lwm,l,zc,dl,dzc,hwm,index_wm)
+  !$acc enter data copyin(bcu,bcu%x,bcu%y,bcu%z) async
+  !$acc enter data copyin(bcv,bcv%x,bcv%y,bcv%z) async
+  !$acc enter data copyin(bcw,bcw%x,bcw%y,bcw%z) async
+  !$acc enter data copyin(bcp,bcp%x,bcp%y,bcp%z) async
+  !$acc enter data copyin(bcs,bcs%x,bcs%y,bcs%z) async
+  !$acc enter data copyin(bcu_mag,bcu_mag%x,bcu_mag%y,bcu_mag%z) async
+  !$acc enter data copyin(bcv_mag,bcv_mag%x,bcv_mag%y,bcv_mag%z) async
+  !$acc enter data copyin(bcw_mag,bcw_mag%x,bcw_mag%y,bcw_mag%z) async
+  !$acc enter data copyin(bcuf,bcuf%x,bcuf%y,bcuf%z) async
+  !$acc enter data copyin(bcvf,bcvf%x,bcvf%y,bcvf%z) async
+  !$acc enter data copyin(bcwf,bcwf%x,bcwf%y,bcwf%z) async
+  !$acc wait
+#endif
   !
   ! initialize Poisson solver
   !
@@ -294,6 +382,9 @@ program cans
                   lambdaxyp,['c','c','c'],ap,bp,cp,arrplanp,normfftp,rhsbp%x,rhsbp%y,rhsbp%z)
   !$acc enter data copyin(lambdaxyp,ap,bp,cp) async
   !$acc enter data copyin(rhsbp,rhsbp%x,rhsbp%y,rhsbp%z) async
+#if defined(_LES)
+  call cmpt_rhs_b(ng,dl,dzc_g,dzf_g,cbcpre,bcp,['c','c','c'],rhsbp%x,rhsbp%y,rhsbp%z)
+#endif
   if(is_poisson_pcr_tdma) then
     !$acc enter data create(ap_d,cp_d) async
   end if
@@ -350,8 +441,10 @@ program cans
                   device_memory_footprint(n,n_z,nscal)/(1._sp*1024**3), ' ***'
 #endif
   if(is_debug_poisson) then
+#if !defined(_LES)
     call test_sanity_solver(ng,lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z,dli,dzc,dzf,dzci,dzfi,dzci_g,dzfi_g, &
                             nb,is_bound,cbcvel,cbcpre,bcvel,bcpre)
+#endif
   end if
   !
   allocate(io_vars(4+nscal),c_io_vars(4+nscal)) ! u,v,w,p,scalars
@@ -383,8 +476,17 @@ program cans
     if(myid == 0) print*, '*** Checkpoint loaded at time = ', time, 'time step = ', istep, '. ***'
   end if
   !$acc enter data copyin(u,v,w,p,dudtrko,dvdtrko,dwdtrko) create(pp)
+#if defined(_LES)
+  call bounduvw_les(cbcvel,n,bcu,bcv,bcw,bcu_mag,bcv_mag,bcw_mag,nb,is_bound,lwm,l,dl,zc,zf,dzc,dzf, &
+                    visc,hwm,index_wm,.true.,.false.,u,v,w)
+  call boundp_les(cbcpre,n,bcp,nb,is_bound,dl,dzc,p)
+  call cmpt_sgs(sgstype,n,ng,lo,hi,cbcvel,cbcsgs,bcs,nb,is_bound,lwm,l,dl,dli,zc,zf,dzc,dzf, &
+                dzci,dzfi,visc,hwm,index_wm,u,v,w,bcuf,bcvf,bcwf,bcu_mag,bcv_mag,bcw_mag,visct)
+  call boundp_les(cbcsgs,n,bcs,nb,is_bound,dl,dzc,visct) ! corner ghost cells included
+#else
   call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,p)
+#endif
   do iscal=1,nscal
     s => scalars(iscal)
     !$acc enter data copyin(s%val,s%dsdtrko) async(1)
@@ -401,16 +503,32 @@ program cans
     !$acc update self(scalars(iscal)%val)
   end do
   if(iout1d > 0.and.mod(istep,max(iout1d,1)) == 0) then
+#if defined(_LES)
+    include 'out1d_les.h90'
+#else
     include 'out1d.h90'
+#endif
   end if
   if(iout2d > 0.and.mod(istep,max(iout2d,1)) == 0) then
+#if defined(_LES)
+    include 'out2d_les.h90'
+#else
     include 'out2d.h90'
+#endif
   end if
   if(iout3d > 0.and.mod(istep,max(iout3d,1)) == 0) then
+#if defined(_LES)
+    include 'out3d_les.h90'
+#else
     include 'out3d.h90'
+#endif
   end if
   !
+#if defined(_LES)
+  call chkdt_les(n,dl,dzci,dzfi,visc,visct,u,v,w,dt_cfl)
+#else
   call chkdt(n,dl,dzci,dzfi,visc,alpha_max,u,v,w,dt_cfl)
+#endif
   dt = merge(dt_f,min(cfl*dt_cfl,dtmax),dt_f > 0.)
   if(myid == 0) print*, 'dt_cfl = ', dt_cfl, 'dt = ', dt
   dti = 1./dt
@@ -446,8 +564,13 @@ program cans
         end if
         call boundp(s%cbc,n,s%bc,nb,is_bound,dl,dzc,s%val)
       end do
+#if defined(_LES)
+      call rk_les(rkcoeff(:,irk),n,dli,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
+                  is_forced,velf,bforce,visct,gacc,beta,scalars,dudtrko,dvdtrko,dwdtrko,u,v,w,f)
+#else
       call rk(rkcoeff(:,irk),n,dli,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
               is_forced,velf,bforce,gacc,beta,scalars,dudtrko,dvdtrko,dwdtrko,u,v,w,f)
+#endif
       call bulk_forcing(n,is_forced,f,u,v,w)
       dpdl(:) = dpdl(:) + f(:)
       if(is_impdiff) then
@@ -459,15 +582,36 @@ program cans
         call solve_helmholtz(n,ng,hi,arrplanw,normfftw,alpha, &
                              lambdaxyw,aw,bw,cw,rhsbw%x,rhsbw%y,rhsbw%z,is_bound,cbcvel(:,:,3),['c','c','f'],w)
       end if
+#if defined(_LES)
+      call bounduvw_les(cbcvel,n,bcu,bcv,bcw,bcu_mag,bcv_mag,bcw_mag,nb,is_bound,lwm,l,dl,zc,zf,dzc,dzf, &
+                        visc,hwm,index_wm,.true.,.false.,u,v,w)
+#else
       call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
+#endif
       call fillps(n,dli,dzfi,dtrki,u,v,w,pp)
       call updt_rhs_b(['c','c','c'],cbcpre,n,is_bound,rhsbp%x,rhsbp%y,rhsbp%z,pp)
       call solver(n,ng,arrplanp,normfftp,lambdaxyp,ap,bp,cp,cbcpre,['c','c','c'],pp,is_ptdma_update_p,ap_d,cp_d)
+#if defined(_LES)
+      call boundp_les(cbcpre,n,bcp,nb,is_bound,dl,dzc,pp)
+#else
       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,pp)
+#endif
       call correc(n,dli,dzci,dtrk,pp,u,v,w)
+#if defined(_LES)
+      call bounduvw_les(cbcvel,n,bcu,bcv,bcw,bcu_mag,bcv_mag,bcw_mag,nb,is_bound,lwm,l,dl,zc,zf,dzc,dzf, &
+                        visc,hwm,index_wm,.true.,.true.,u,v,w)
+#else
       call bounduvw(cbcvel,n,bcvel,nb,is_bound,.true.,dl,dzc,dzf,u,v,w)
+#endif
       call updatep(n,dli,dzci,dzfi,alpha,pp,p)
+#if defined(_LES)
+      call boundp_les(cbcpre,n,bcp,nb,is_bound,dl,dzc,p)
+      call cmpt_sgs(sgstype,n,ng,lo,hi,cbcvel,cbcsgs,bcs,nb,is_bound,lwm,l,dl,dli,zc,zf,dzc,dzf, &
+                    dzci,dzfi,visc,hwm,index_wm,u,v,w,bcuf,bcvf,bcwf,bcu_mag,bcv_mag,bcw_mag,visct)
+      call boundp_les(cbcsgs,n,bcs,nb,is_bound,dl,dzc,visct)
+#else
       call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,p)
+#endif
     end do
     dpdl(:)     = -dpdl(:)*dti
     fs(1:nscal) = fs(1:nscal)*dti
@@ -486,7 +630,11 @@ program cans
     end if
     if(icheck > 0.and.mod(istep,max(icheck,1)) == 0) then
       if(myid == 0) print*, 'Checking stability and divergence...'
+#if defined(_LES)
+      call chkdt_les(n,dl,dzci,dzfi,visc,visct,u,v,w,dt_cfl)
+#else
       call chkdt(n,dl,dzci,dzfi,visc,alpha_max,u,v,w,dt_cfl)
+#endif
       dt = merge(dt_f,min(cfl*dt_cfl,dtmax),dt_f > 0.)
       if(myid == 0) print*, 'dt_cfl = ', dt_cfl, 'dt = ', dt
       if(dt_cfl < small) then
@@ -556,7 +704,11 @@ program cans
       do iscal=1,nscal
         !$acc update self(scalars(iscal)%val)
       end do
+#if defined(_LES)
+      include 'out1d_les.h90'
+#else
       include 'out1d.h90'
+#endif
     end if
     if(iout2d > 0.and.mod(istep,max(iout2d,1)) == 0) then
       !$acc wait
@@ -564,7 +716,11 @@ program cans
       do iscal=1,nscal
         !$acc update self(scalars(iscal)%val)
       end do
+#if defined(_LES)
+      include 'out2d_les.h90'
+#else
       include 'out2d.h90'
+#endif
     end if
     if(iout3d > 0.and.mod(istep,max(iout3d,1)) == 0) then
       !$acc wait
@@ -572,7 +728,11 @@ program cans
       do iscal=1,nscal
         !$acc update self(scalars(iscal)%val)
       end do
+#if defined(_LES)
+      include 'out3d_les.h90'
+#else
       include 'out3d.h90'
+#endif
     end if
     if(isave > 0.and.((mod(istep,max(isave,1)) == 0).or.(is_done.and..not.kill))) then
       if(is_overwrite_save) then

@@ -19,7 +19,8 @@ module mod_initgrid
     integer, parameter :: CLUSTER_TWO_END              = 1, &
                           CLUSTER_ONE_END              = 2, &
                           CLUSTER_ONE_END_R            = 3, &
-                          CLUSTER_MIDDLE               = 4
+                          CLUSTER_MIDDLE               = 4, &
+                          CLUSTER_WALL_MODEL           = 5
     integer , intent(in ) :: gtype,n
     real(rp), intent(in ) :: gr,lz
     real(rp), intent(out), dimension(0:n+1) :: dzc,dzf,zc,zf
@@ -35,6 +36,8 @@ module mod_initgrid
       gridpoint => gridpoint_cluster_one_end_r
     case(CLUSTER_MIDDLE)
       gridpoint => gridpoint_cluster_middle
+    case(CLUSTER_WALL_MODEL)
+      gridpoint => gridpoint_cluster_wall_model
     case default
       gridpoint => gridpoint_cluster_two_end
     end select
@@ -144,6 +147,19 @@ module mod_initgrid
       z = z0
     end if
   end subroutine gridpoint_cluster_middle
+  subroutine gridpoint_cluster_wall_model(kg,nzg,alpha,z0,z)
+    !
+    ! clustered using Larsson's formula
+    !
+    implicit none
+    integer, intent(in) :: kg,nzg
+    real(rp), intent(in) :: alpha,z0
+    real(rp), intent(out) :: z
+    real(rp) :: dzc
+    !
+    dzc = 0.1*32./nzg ! dzc = 0.1 for nzg = 32
+    z = z0 - (dzc*nzg/2.-1.)/(2.*pi)*sin(2.*pi*z0)
+  end subroutine gridpoint_cluster_wall_model
   subroutine gridpoint_natural(kg,nzg,z,kb_a,alpha_a,c_eta_a,dyp_a)
     !
     ! a physics-based, 'natural' grid stretching function for wall-bounded turbulence
