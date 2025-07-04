@@ -8,6 +8,9 @@ module mod_chkdt
   use mpi
   use mod_common_mpi, only:ierr
   use mod_param     , only:is_impdiff,is_impdiff_1d
+#if defined(_LES)
+  use mod_param     , only:eps
+#endif
   use mod_types
   implicit none
   private
@@ -31,7 +34,7 @@ module mod_chkdt
     integer , intent(in), dimension(3) :: n
     real(rp), intent(in), dimension(3) :: dl
     real(rp), intent(in), dimension(0:) :: dzci,dzfi
-    real(rp), intent(in) :: visc,alpha
+    real(rp), intent(in) :: visc
     real(rp), intent(in), dimension(0:,0:,0:) :: visct,u,v,w
     real(rp), intent(out) :: dtmax
     real(rp) :: dxi,dyi,dzi

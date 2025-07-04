@@ -39,9 +39,12 @@ program cans
   use mod_fillps         , only: fillps
   use mod_initflow       , only: initflow,initscal
   use mod_initgrid       , only: initgrid
+#if !defined(_LES)
   use mod_initmpi        , only: initmpi
+#endif
   use mod_initsolver     , only: initsolver
-  use mod_solve_helmholtz, only: solve_helmholtz,rhs_bound
+  use mod_solve_helmholtz, only: solve_helmholtz
+  use mod_typedef        , only: bound
   use mod_load           , only: load_one
   use mod_mom            , only: bulk_forcing
   use mod_rk             , only: rk,rk_scal
@@ -67,7 +70,10 @@ program cans
                                  is_impdiff,is_impdiff_1d, &
                                  is_poisson_pcr_tdma, &
                                  is_mask_divergence_check
-  use mod_sanity         , only: test_sanity_input,test_sanity_solver
+  use mod_sanity         , only: test_sanity_input
+#if !defined(_LES)
+  use mod_sanity         , only: test_sanity_solver
+#endif
   use mod_scal           , only: scalar,initialize_scalars,bulk_forcing_s
 #if !defined(_OPENACC)
   use mod_solver         , only: solver
@@ -95,7 +101,6 @@ program cans
   use mod_param          , only: cbcsgs, bcsgs, &
                                  sgstype,lwm,hwm,index_wm
   use mod_sanity         , only: test_sanity_input_les
-  use mod_typedef        , only: bound
 #endif
   use omp_lib
   implicit none
@@ -118,9 +123,9 @@ program cans
   real(rp), allocatable, dimension(:,:,:) :: ap_d,cp_d
   logical :: is_ptdma_update_p
   real(rp) :: normfftp
-  type(rhs_bound) :: rhsbp
+  type(bound) :: rhsbp
 #if defined(_LES)
-  type(rhs_bound) :: bcu,bcv,bcw,bcp,bcs,bcuf,bcvf,bcwf,bcu_mag,bcv_mag,bcw_mag
+  type(bound) :: bcu,bcv,bcw,bcp,bcs,bcuf,bcvf,bcwf,bcu_mag,bcv_mag,bcw_mag
 #endif
   real(rp) :: alpha
 #if !defined(_OPENACC)
@@ -131,7 +136,7 @@ program cans
   real(rp), allocatable, dimension(:,:) :: lambdaxyu,lambdaxyv,lambdaxyw
   real(rp), allocatable, dimension(:) :: au,av,aw,bu,bv,bw,cu,cv,cw
   real(rp) :: normfftu,normfftv,normfftw
-  type(rhs_bound) :: rhsbu,rhsbv,rhsbw
+  type(bound) :: rhsbu,rhsbv,rhsbw
   !
   real(rp) :: dt,dti,dt_cfl,time,dtrk,dtrki,divtot,divmax
   integer :: irk,istep

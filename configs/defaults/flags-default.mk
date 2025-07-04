@@ -86,6 +86,7 @@ CUSTOM_DEFINES =  SINGLE_PRECISION \
 				  LOOP_UNSWITCHING \
 				  DECOMP_X_IO \
                   USE_NVTX \
+				  LES
 
 DEFINES += $(foreach var,$(CUSTOM_DEFINES),$(if $(filter 1,$(strip $($(var)))), -D_$(var)))
 

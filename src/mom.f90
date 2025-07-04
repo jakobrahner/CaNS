@@ -651,6 +651,7 @@ module mod_mom
   !
 #if defined(_LES)
   subroutine mom_xyz_ad_les(nx,ny,nz,dxi,dyi,dzci,dzfi,visc,u,v,w,visct,dudt,dvdt,dwdt,dudtd,dvdtd,dwdtd)
+    use mod_param, only: is_impdiff,is_impdiff_1d
     !
     ! lump all r.h.s. of momentum terms (excluding pressure) into a single fast kernel
     ! interpolation of eddy viscosity, verified by visct = x+y+z

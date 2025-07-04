@@ -8,7 +8,11 @@ module mod_initmpi
   use mpi
   use decomp_2d
   use mod_common_mpi, only: myid,ierr,halo,dinfo_ptdma
+#if defined(_LES)
+  use mod_common_mpi, only: ipencil => ipencil_axis
+#else
   use mod_param     , only: ipencil => ipencil_axis,is_poisson_pcr_tdma
+#endif
   use mod_types
 #if defined(_OPENACC)
   use openacc
@@ -27,9 +31,10 @@ module mod_initmpi
 #endif
   implicit none
   private
-  public initmpi
 #if defined(_LES)
   public initmpi_les
+#else
+  public initmpi
 #endif
 #if defined(_OPENACC)
   integer, parameter :: CUDECOMP_RANK_NULL = -1
@@ -240,7 +245,7 @@ module mod_initmpi
       end if
     end do
   end subroutine calc_dims
-#endif
+#else
   subroutine initmpi(ng,dims,bc,lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z,nb,is_bound)
     implicit none
     integer, intent(in   ), dimension(3) :: ng
@@ -453,6 +458,7 @@ module mod_initmpi
     end if
 #endif
   end subroutine initmpi
+#endif
   !
   subroutine makehalo(idir,nh,n,halo)
     implicit none

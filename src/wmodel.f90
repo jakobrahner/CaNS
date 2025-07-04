@@ -11,7 +11,7 @@ module mod_wmodel
   use mpi
   use mod_types
   use mod_typedef, only: bound
-  use mod_param, only: kap_log,b_log,eps
+  use mod_param  , only: kap_log,b_log,eps
   implicit none
   private
   public updt_wallmodelbc

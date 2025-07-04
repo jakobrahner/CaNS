@@ -17,7 +17,7 @@ module mod_bound
   private
   public boundp,bounduvw,updt_rhs_b
 #if defined(_LES)
-  public boundp_les,bounduvw_les,cmpt_rhs_b,updt_rhs_b,initbc
+  public boundp_les,bounduvw_les,cmpt_rhs_b,initbc
 #endif
   contains
 #if defined(_LES)

@@ -18,12 +18,7 @@ module mod_solve_helmholtz
 #endif
   implicit none
   private
-  type rhs_bound
-    real(rp), allocatable, dimension(:,:,:) :: x
-    real(rp), allocatable, dimension(:,:,:) :: y
-    real(rp), allocatable, dimension(:,:,:) :: z
-  end type rhs_bound
-  public solve_helmholtz,rhs_bound
+  public solve_helmholtz
   contains
   subroutine solve_helmholtz(n,ng,hi,arrplan,normfft,alpha,lambdaxy,a,b,c,rhsbx,rhsby,rhsbz,is_bound,cbc,c_or_f,p)
     !

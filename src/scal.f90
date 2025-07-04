@@ -7,7 +7,7 @@
 module mod_scal
   use, intrinsic :: iso_c_binding, only: C_PTR
   use mod_types
-  use mod_solve_helmholtz, only: rhs_bound
+  use mod_typedef, only: bound
   implicit none
   private
   public scal,scalar,cmpt_scalflux,bulk_forcing_s,initialize_scalars
@@ -34,7 +34,7 @@ module mod_scal
     real(rp), allocatable, dimension(:,:) :: lambdaxy
     real(rp), allocatable, dimension(:) :: a,b,c
     real(rp) :: normfft
-    type(rhs_bound) :: rhsb
+    type(bound) :: rhsb
   end type scalar
   !
   contains

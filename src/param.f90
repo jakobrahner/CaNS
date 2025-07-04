@@ -57,7 +57,11 @@ integer , protected :: ipencil_axis = 1
 !
 integer, dimension(0:1,3) :: nb
 logical, dimension(0:1,3) :: is_bound
+#if defined(_LES)
+character(len=1)           , dimension(0:1,3,3) ::  cbcvel
+#else
 character(len=1), protected, dimension(0:1,3,3) ::  cbcvel
+#endif
 real(rp)        , protected, dimension(0:1,3,3) ::   bcvel
 character(len=1), protected, dimension(0:1,3)   ::  cbcpre
 real(rp)        , protected, dimension(0:1,3)   ::   bcpre

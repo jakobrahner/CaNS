@@ -16,12 +16,12 @@ module mod_sanity
   use mod_fft       , only: fftend
   use mod_fillps    , only: fillps
   use mod_initflow  , only: add_noise
-  use mod_initmpi   , only: initmpi
 #if defined(_LES)
   use mod_initmpi   , only: initmpi_les
   use mod_bound     , only: boundp_les,bounduvw_les
   use mod_wmodel    , only: updt_wallmodelbc
-  use mod_typedef   , only: bound
+#else
+  use mod_initmpi   , only: initmpi
 #endif
   use mod_initsolver, only: initsolver
   use mod_param     , only: ipencil_axis,is_impdiff,is_impdiff_1d,is_poisson_pcr_tdma,small
@@ -33,9 +33,11 @@ module mod_sanity
   use mod_types
   implicit none
   private
-  public test_sanity_input,test_sanity_solver
+  public test_sanity_input
 #if defined(_LES)
   public test_sanity_input_les
+#else
+  public test_sanity_solver
 #endif
   contains
   subroutine test_sanity_input(ng,dims,stop_type,cbcvel,cbcpre,bcvel,bcpre,is_forced)
@@ -450,6 +452,7 @@ module mod_sanity
     print*, 'ERROR: Flow cannot be forced in a non-periodic direction; check the BCs and is_forced in `input.nml`.'
   end subroutine chk_forcing
   !
+#if !defined(_LES)
   subroutine test_sanity_solver(ng,lo,hi,n,n_x_fft,n_y_fft,lo_z,hi_z,n_z,dli,dzc,dzf,dzci,dzfi,dzci_g,dzfi_g, &
                                 nb,is_bound,cbcvel,cbcpre,bcvel,bcpre)
 #if defined(_OPENACC)
@@ -520,11 +523,7 @@ module mod_sanity
     call fillps(n,dli,dzfi,dti,u,v,w,p)
     call updt_rhs_b(['c','c','c'],cbcpre,n,is_bound,rhsbx,rhsby,rhsbz,p)
     call solver(n,ng,arrplan,normfft,lambdaxy,a,b,c,cbcpre,['c','c','c'],p)
-#if defined(_LES)
-    call boundp_les(cbcpre,n,bcp,nb,is_bound,dl,dzc,p)
-#else
     call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,p)
-#endif
     call correc(n,dli,dzci,dt,p,u,v,w)
     call bounduvw(cbcvel,n,bcvel,nb,is_bound,.true.,dl,dzc,dzf,u,v,w)
     call chkdiv(lo,hi,dli,dzfi,u,v,w,divtot,divmax)
@@ -657,6 +656,7 @@ module mod_sanity
       error stop
     end if
   end subroutine test_sanity_solver
+#endif
   !
   subroutine abortit
     implicit none

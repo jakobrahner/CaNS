@@ -11,9 +11,9 @@ module mod_sgs
   use mpi
   use mod_types
   use mod_common_mpi, only: ierr
-  use mod_param, only: c_smag,big
-  use mod_typedef, only: bound
-  use mod_bound, only: boundp,bounduvw
+  use mod_param     , only: c_smag,big
+  use mod_typedef   , only: bound
+  use mod_bound     , only: boundp_les,bounduvw_les
   implicit none
   private
   public cmpt_sgs

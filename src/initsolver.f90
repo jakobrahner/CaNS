@@ -6,10 +6,7 @@
 ! -
 module mod_initsolver
   use, intrinsic :: iso_c_binding, only: C_PTR
-  use mod_fft    , only: fftini
-#if defined(_LES)
-  use mod_typedef, only: bound
-#endif
+  use mod_fft, only: fftini
   use mod_types
   implicit none
   private
