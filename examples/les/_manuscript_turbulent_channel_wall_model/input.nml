@@ -14,12 +14,10 @@ cbcvel(0:1,1:3,1) = 'P','P',  'P','P',  'D','D'
 cbcvel(0:1,1:3,2) = 'P','P',  'P','P',  'D','D'
 cbcvel(0:1,1:3,3) = 'P','P',  'P','P',  'D','D'
 cbcpre(0:1,1:3)   = 'P','P',  'P','P',  'N','N'
-cbcsgs(0:1,1:3)   = 'P','P',  'P','P',  'D','D'
 bcvel(0:1,1:3,1) =  0.,0.,   0.,0.,   0.,0.
 bcvel(0:1,1:3,2) =  0.,0.,   0.,0.,   0.,0.
 bcvel(0:1,1:3,3) =  0.,0.,   0.,0.,   0.,0.
 bcpre(0:1,1:3)   =  0.,0.,   0.,0.,   0.,0.
-bcsgs(0:1,1:3)   =  0.,0.,   0.,0.,   0.,0.
 bforce(1:3) = 0., 0., 0.
 is_forced(1:3) = T, F, F
 velf(1:3) = 1., 0., 0.
@@ -27,6 +25,8 @@ dims(1:2) = 0, 0
 /
 
 &les
+cbcsgs(0:1,1:3) = 'P','P',  'P','P',  'D','D'
+bcsgs(0:1,1:3)  =  0.,0.,   0.,0.,   0.,0.
 sgstype = 'smag'
 lwm(0:1,1:3) = 0,0, 0,0, 1,1
 hwm = 0.1
@@ -35,4 +35,13 @@ hwm = 0.1
 &cudecomp
 cudecomp_t_comm_backend = 0, cudecomp_is_t_enable_nccl = T, cudecomp_is_t_enable_nvshmem = T
 cudecomp_h_comm_backend = 0, cudecomp_is_h_enable_nccl = T, cudecomp_is_h_enable_nvshmem = T
+/
+
+&numerics
+is_impdiff = F, is_impdiff_1d = F
+is_poisson_pcr_tdma = F
+/
+
+&other_options
+is_debug = T, is_timing = T
 /

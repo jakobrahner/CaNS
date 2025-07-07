@@ -47,13 +47,15 @@ module mod_scal
     integer , intent(in) :: nx,ny,nz
     real(rp), intent(in) :: dxi,dyi,visc
     real(rp), intent(in), dimension(0:) :: dzci,dzfi
-    real(rp), dimension(0:,0:,0:), intent(in) :: u,v,w,s
+    real(rp), dimension(0:,0:,0:), intent(in) :: u,v,w,s,visct
     real(rp), dimension(:,:,:), intent(out) :: dsdt
     real(rp), dimension(:,:,:), intent(out), optional :: dsdtd
     integer :: i,j,k
     real(rp) :: usip,usim,vsjp,vsjm,wskp,wskm
     real(rp) :: dsdxp,dsdxm,dsdyp,dsdym,dsdzp,dsdzm
     real(rp) :: dsdtd_xy,dsdtd_z
+    real(rp) :: diff_eff  ! Effective diffusivity
+    real(rp), parameter :: pr_t  = 0.7_rp
     !
 #if !defined(_LOOP_UNSWITCHING)
     !$acc parallel loop collapse(3) default(present) &
@@ -79,9 +81,15 @@ module mod_scal
           dsdt(i,j,k) = dxi*(     -usip + usim ) + &
                         dyi*(     -vsjp + vsjm ) + &
                         dzfi(k)*( -wskp + wskm )
-          dsdtd_xy = (dsdxp-dsdxm)*visc*dxi + &
-                     (dsdyp-dsdym)*visc*dyi
-          dsdtd_z  = (dsdzp-dsdzm)*visc*dzfi(k)
+          !
+#if defined(_LES)
+          diff_eff = visc + visct(i,j,k)/pr_t
+#else
+          diff_eff = visc
+#endif
+          dsdtd_xy = (dsdxp-dsdxm)*diff_eff*dxi + &
+                     (dsdyp-dsdym)*diff_eff*dyi
+          dsdtd_z  = (dsdzp-dsdzm)*diff_eff*dzfi(k)
           if(is_impdiff) then
             if(is_impdiff_1d) then
               dsdt(i,j,k)  = dsdt(i,j,k) + dsdtd_xy
@@ -119,9 +127,15 @@ module mod_scal
             dsdt(i,j,k) = dxi*(    -usip + usim ) + &
                           dyi*(    -vsjp + vsjm ) + &
                           dzfi(k)*( -wskp + wskm )
-            dsdtd_xy = (dsdxp-dsdxm)*visc*dxi + &
-                       (dsdyp-dsdym)*visc*dyi
-            dsdtd_z  = (dsdzp-dsdzm)*visc*dzfi(k)
+            !
+#if defined(_LES)
+            diff_eff = visc + visct(i,j,k)/pr_t
+#else
+            diff_eff = visc
+#endif
+            dsdtd_xy = (dsdxp-dsdxm)*diff_eff*dxi + &
+                       (dsdyp-dsdym)*diff_eff*dyi
+            dsdtd_z  = (dsdzp-dsdzm)*diff_eff*dzfi(k)
             dsdt(i,j,k) = dsdt(i,j,k) + dsdtd_xy + dsdtd_z
           end do
         end do
@@ -149,9 +163,15 @@ module mod_scal
             dsdt(i,j,k) = dxi*(    -usip + usim ) + &
                           dyi*(    -vsjp + vsjm ) + &
                           dzfi(k)*( -wskp + wskm )
-            dsdtd_xy = (dsdxp-dsdxm)*visc*dxi + &
-                       (dsdyp-dsdym)*visc*dyi
-            dsdtd_z  = (dsdzp-dsdzm)*visc*dzfi(k)
+            !
+#if defined(_LES)
+            diff_eff = visc + visct(i,j,k)/pr_t
+#else
+            diff_eff = visc
+#endif
+            dsdtd_xy = (dsdxp-dsdxm)*diff_eff*dxi + &
+                       (dsdyp-dsdym)*diff_eff*dyi
+            dsdtd_z  = (dsdzp-dsdzm)*diff_eff*dzfi(k)
             dsdt(i,j,k)  = dsdt(i,j,k) + dsdtd_xy
             dsdtd(i,j,k) = dsdtd_z
           end do
@@ -180,9 +200,15 @@ module mod_scal
             dsdt(i,j,k) = dxi*(    -usip + usim ) + &
                           dyi*(    -vsjp + vsjm ) + &
                           dzfi(k)*( -wskp + wskm )
-            dsdtd_xy = (dsdxp-dsdxm)*visc*dxi + &
-                       (dsdyp-dsdym)*visc*dyi
-            dsdtd_z  = (dsdzp-dsdzm)*visc*dzfi(k)
+            !
+#if defined(_LES)
+            diff_eff = visc + visct(i,j,k)/pr_t
+#else
+            diff_eff = visc
+#endif
+            dsdtd_xy = (dsdxp-dsdxm)*diff_eff*dxi + &
+                       (dsdyp-dsdym)*diff_eff*dyi
+            dsdtd_z  = (dsdzp-dsdzm)*diff_eff*dzfi(k)
             dsdtd(i,j,k) = dsdtd_xy + dsdtd_z
           end do
         end do
