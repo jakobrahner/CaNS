@@ -17,12 +17,15 @@ module mod_rk
 #endif
   use mod_param, only: is_impdiff,is_impdiff_1d,is_boussinesq_buoyancy,is_fast_mom_kernels
   use mod_scal , only: scal,cmpt_scalflux,scalar
+#if defined(_LES)
+  use mod_scal , only: scal_les
+#endif
   use mod_utils, only: bulk_mean
   use mod_types
   implicit none
   public rk,rk_scal
 #if defined(_LES)
-  public rk_les
+  public rk_les,rk_scal_les
 #endif
   contains
   subroutine rk(rkpar,n,dli,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &
@@ -748,6 +751,166 @@ module mod_rk
       end do
     end do
   end subroutine rk_scal
+#if defined(_LES)  
+  subroutine rk_scal_les(rkpar,n,dli,l,dzci,dzfi,grid_vol_ratio_f,alpha,dt,is_bound,u,v,w,visct, &
+                         is_forced,scalf,ssource,fluxo,dsdtrko,s,f)
+#if defined(_OPENACC)
+    use mod_common_cudecomp, only: dsdtrk_t => work
+#endif
+    !
+    ! low-storage 3rd-order Runge-Kutta scheme
+    ! for time integration of the scalar field.
+    !
+    implicit none
+    logical , parameter :: is_cmpt_wallflux = .false.
+    real(rp), intent(in   ), dimension(2) :: rkpar
+    integer , intent(in   ), dimension(3) :: n
+    real(rp), intent(in   ), dimension(3) :: dli,l
+    real(rp), intent(in   ), dimension(0:) :: dzci,dzfi
+    real(rp), intent(in   ), dimension(:) :: grid_vol_ratio_f
+    real(rp), intent(in   ) :: alpha,dt
+    logical , intent(in   ), dimension(0:1,3)    :: is_bound
+    real(rp), intent(in   ), dimension(0:,0:,0:) :: u,v,w,visct
+    logical , intent(in   ) :: is_forced
+    real(rp), intent(in   ) :: scalf,ssource
+    real(rp), intent(inout), dimension(0:1,3) :: fluxo
+    real(rp), intent(inout), dimension(1:,1:,1:) :: dsdtrko
+    real(rp), intent(inout), dimension(0:,0:,0:) :: s
+    real(rp), intent(out  ) :: f
+    !
+#if !defined(_OPENACC)
+    real(rp), target       , allocatable, dimension(:,:,:), save :: dsdtrk_t
+#endif
+    real(rp), pointer      , contiguous , dimension(:,:,:), save :: dsdtrk
+    real(rp), target       , allocatable, dimension(:,:,:), save :: dsdtrkd
+    logical, save :: is_first = .true.
+    !
+    real(rp) :: factor1,factor2,factor12
+    real(rp), dimension(0:1,3) :: flux
+    integer :: i,j,k
+    real(rp) :: mean
+    !
+    factor1 = rkpar(1)*dt
+    factor2 = rkpar(2)*dt
+    factor12 = factor1 + factor2
+    if(is_first) then ! leverage save attribute to allocate these arrays on the device only once
+      is_first = .false.
+#if !defined(_OPENACC)
+      allocate(dsdtrk_t(1:n(1),1:n(2),1:n(3)))
+#endif
+      !$acc parallel loop collapse(3) default(present) async(1)
+      !$OMP parallel do   collapse(3) DEFAULT(shared)
+      do k=1,n(3)
+        do j=1,n(2)
+          do i=1,n(1)
+            dsdtrko(i,j,k) = 0._rp
+          end do
+        end do
+      end do
+      if(is_impdiff) then
+        allocate(dsdtrkd(n(1),n(2),n(3)))
+        !$acc enter data create(dsdtrkd) async(1)
+        !$acc parallel loop collapse(3) default(present) async(1)
+        !$OMP parallel do   collapse(3) DEFAULT(shared)
+        do k=1,n(3)
+          do j=1,n(2)
+            do i=1,n(1)
+              dsdtrkd(i,j,k) = 0._rp
+            end do
+          end do
+        end do
+      end if
+    end if
+#if defined(_OPENACC)
+    dsdtrk(1:n(1),1:n(2),1:n(3)) => dsdtrk_t(1:product(n(:)))
+#else
+    dsdtrk => dsdtrk_t
+#endif
+    !
+    call scal_les(n(1),n(2),n(3),dli(1),dli(2),dzci,dzfi,alpha,visct,u,v,w,s,dsdtrk,dsdtrkd)
+    !
+#if !defined(_LOOP_UNSWITCHING)
+    !$acc parallel loop collapse(3) default(present) async(1)
+    !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
+    do k=1,n(3)
+      do j=1,n(2)
+        do i=1,n(1)
+          s(i,j,k) = s(i,j,k) + factor1*dsdtrk(i,j,k) + factor2*dsdtrko(i,j,k) + factor12*ssource
+          if(is_impdiff) then
+            s(i,j,k) = s(i,j,k) + factor12*dsdtrkd(i,j,k)
+          end if
+        end do
+      end do
+    end do
+#else
+    if(.not.is_impdiff) then
+      !$acc parallel loop collapse(3) default(present) async(1)
+      !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
+      do k=1,n(3)
+        do j=1,n(2)
+          do i=1,n(1)
+            s(i,j,k) = s(i,j,k) + factor1*dsdtrk(i,j,k) + factor2*dsdtrko(i,j,k) + factor12*ssource
+          end do
+        end do
+      end do
+    else
+      !$acc parallel loop collapse(3) default(present) async(1)
+      !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
+      do k=1,n(3)
+        do j=1,n(2)
+          do i=1,n(1)
+            s(i,j,k) = s(i,j,k) + factor1*dsdtrk(i,j,k) + factor2*dsdtrko(i,j,k) + &
+                                  factor12*(ssource + dsdtrkd(i,j,k))
+          end do
+        end do
+      end do
+    end if
+#endif
+    !
+    ! compute wall scalar flux
+    !
+    if(is_cmpt_wallflux) then
+      call cmpt_scalflux(n,is_bound,l,dli,dzci,dzfi,alpha,s(:,:,:),flux)
+      f = (factor1*sum((flux( 0,:)+flux( 1,:))/l(:)) + &
+           factor2*sum((fluxo(0,:)+fluxo(1,:))/l(:)))
+      fluxo(:,:) = flux(:,:)
+    end if
+    !
+    ! bulk scalar forcing
+    !
+    if(is_forced) then
+      call bulk_mean(n,grid_vol_ratio_f,s(:,:,:),mean)
+      f = scalf - mean
+    end if
+    if(is_impdiff) then
+      !
+      ! compute rhs of Helmholtz equation
+      !
+      !$acc parallel loop collapse(3) default(present) async(1)
+      !$OMP PARALLEL DO   COLLAPSE(3) DEFAULT(shared)
+      do k=1,n(3)
+        do j=1,n(2)
+          do i=1,n(1)
+            s(i,j,k) = s(i,j,k) - .5_rp*factor12*dsdtrkd(i,j,k)
+          end do
+        end do
+      end do
+    end if
+    !
+    ! replaced previous pointer swap to save memory on GPUs by using already allocated
+    ! buffers
+    !
+    !$acc parallel loop collapse(3) default(present) async(1) ! not really necessary
+    !$OMP parallel do   collapse(3) DEFAULT(shared)
+    do k=1,n(3)
+      do j=1,n(2)
+        do i=1,n(1)
+          dsdtrko(i,j,k) = dsdtrk(i,j,k)
+        end do
+      end do
+    end do
+  end subroutine rk_scal_les
+#endif
   !
   subroutine cmpt_bulk_forcing(n,is_forced,velf,grid_vol_ratio_c,grid_vol_ratio_f,u,v,w,f)
     implicit none

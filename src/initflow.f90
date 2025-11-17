@@ -38,6 +38,8 @@ module mod_initflow
     real(rp), allocatable, dimension(:) :: zc2
     real(rp) :: uref,lref
     real(rp) :: ubulk,reb,retau
+    real(rp) :: x,y,r,d0,wc,sigma,kappa
+    real(rp) :: x_mid,y_mid
     integer, dimension(3) :: n
     !
     n(:) = shape(p) - 2*1
@@ -45,6 +47,8 @@ module mod_initflow
     is_noise = .false.
     is_mean  = .false.
     is_pair  = .false.
+    x_mid = 0.5_rp * l(1)  ! Midpoint in physical x
+    y_mid = 0.5_rp * l(2)  ! Midpoint in physical y
     uref  = 1.
     ubulk = uref
     if(is_forced(1)) ubulk = velf(1)
@@ -203,6 +207,23 @@ module mod_initflow
         end do
       end do
       is_mean = .true.
+    case('vnt')
+      d0    = 0.10_rp      ! diameter of the circular vent opening
+      wc    = 0.05_rp      ! peak inflow velocity at vent center (r=0)
+      sigma = 0.05_rp      ! edge thickness of velocity profile; alternatively: sigma = kappa*d0 (kappa=0.125)
+      kappa = 0.125_rp     ! dimensionless parameter controlling the edge steepness of the velocity profile
+      !sigma = kappa*d0     ! alternative expression for sigma
+      do j=1,n(2)
+        yc = (j+lo(2)-1-.5)*dl(2)
+        do i=1,n(1)
+          xc = (i+lo(1)-1-.5)*dl(1)
+          r = sqrt( (xc - x_mid)**2 + (yc - y_mid)**2 )
+          u(i,j,:) = 0._rp
+          v(i,j,:) = 0._rp
+          w(i,j,:) = wc * (1.0_rp - tanh((r - d0)/sigma))/2.0_rp
+          p(i,j,:) = 0._rp
+        end do
+      end do
     case default
       if(myid == 0) print*, 'ERROR: invalid name for initial velocity field'
       if(myid == 0) print*, ''
@@ -211,7 +232,7 @@ module mod_initflow
       call MPI_FINALIZE(ierr)
       error stop
     end select
-    if(.not.any(inivel == ['tgv','tgw','ant','duc'])) then
+    if(.not.any(inivel == ['tgv','tgw','ant','duc','vnt'])) then
       do k=1,n(3)
         do j=1,n(2)
           do i=1,n(1)

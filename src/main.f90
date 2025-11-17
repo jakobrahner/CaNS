@@ -30,7 +30,7 @@ program cans
   use, intrinsic :: ieee_arithmetic, only: is_nan => ieee_is_nan
   use mpi
   use decomp_2d
-  use mod_bound          , only: boundp,bounduvw,updt_rhs_b
+  use mod_bound          , only: boundp,bounduvw,updt_rhs_b,addfluxdiff
   use mod_chkdiv         , only: chkdiv
   use mod_chkdt          , only: chkdt
   use mod_common_mpi     , only: myid,ierr,dinfo_ptdma
@@ -95,7 +95,7 @@ program cans
   use mod_initmpi        , only: initmpi_les
   use mod_sgs            , only: cmpt_sgs
   use mod_dist           , only: wall_dist
-  use mod_rk             , only: rk_les
+  use mod_rk             , only: rk_les,rk_scal_les
   use mod_output         , only: out0d,gen_alias,out1d,out1d_chan,out1d_single_point_chan,out2d,out3d,write_log_output, &
                                  write_visu_2d,write_visu_3d,out2d_duct
   use mod_param          , only: cbcsgs, bcsgs, &
@@ -473,6 +473,13 @@ program cans
       call initscal(s%ini,s%bc,ng,lo,l,dl,zc,dzf,s%alpha,s%is_forced,s%scalf,s%val)
     end do
     if(myid == 0) print*, '*** Initial condition succesfully set ***'
+    ! DELETE LATER:
+    ! print*, 'u(i=128,j=2,k=128) = ', u(128,2,128)
+    ! print*, 'v(i=128,j=2,k=128) = ', v(128,2,128)
+    ! print*, 'w(i=128,j=2,k=128) = ', w(128,2,128)
+    ! print*, 'u(i=128,j=2,k=145) = ', u(128,2,145)
+    ! print*, 'v(i=128,j=2,k=145) = ', v(128,2,145)
+    ! print*, 'w(i=128,j=2,k=145) = ', w(128,2,145)
   else
     do is=1,4+nscal
       call load_one('r',trim(datadir)//'fld'//trim(c_io_vars(is))//'.bin', &
@@ -489,7 +496,7 @@ program cans
                 dzci,dzfi,visc,hwm,index_wm,u,v,w,bcuf,bcvf,bcwf,bcu_mag,bcv_mag,bcw_mag,visct)
   call boundp_les(cbcsgs,n,bcs,nb,is_bound,dl,dzc,visct) ! corner ghost cells included
 #else
-  call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
+  call bounduvw(cbcvel,n,ng,lo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
   call boundp(cbcpre,n,bcpre,nb,is_bound,dl,dzc,p)
 #endif
   do iscal=1,nscal
@@ -559,8 +566,13 @@ program cans
       dtrki = dtrk**(-1)
       do iscal=1,nscal
         s => scalars(iscal)
+#if defined(_LES)
+        call rk_scal_les(rkcoeff(:,irk),n,dli,l,dzci,dzfi,grid_vol_ratio_f,s%alpha,dt,is_bound,u,v,w,visct, &
+                         s%is_forced,s%scalf,s%source,s%fluxo,s%dsdtrko,s%val,s%f)
+#else
         call rk_scal(rkcoeff(:,irk),n,dli,l,dzci,dzfi,grid_vol_ratio_f,s%alpha,dt,is_bound,u,v,w, &
                      s%is_forced,s%scalf,s%source,s%fluxo,s%dsdtrko,s%val,s%f)
+#endif
         call bulk_forcing_s(n,s%is_forced,s%f,s%val)
         fs(iscal) = fs(iscal) + s%f
         if(is_impdiff) then
@@ -591,7 +603,7 @@ program cans
       call bounduvw_les(cbcvel,n,bcu,bcv,bcw,bcu_mag,bcv_mag,bcw_mag,nb,is_bound,lwm,l,dl,zc,zf,dzc,dzf, &
                         visc,hwm,index_wm,.true.,.false.,u,v,w)
 #else
-      call bounduvw(cbcvel,n,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
+      call bounduvw(cbcvel,n,ng,lo,bcvel,nb,is_bound,.false.,dl,dzc,dzf,u,v,w)
 #endif
       call fillps(n,dli,dzfi,dtrki,u,v,w,pp)
       call updt_rhs_b(['c','c','c'],cbcpre,n,is_bound,rhsbp%x,rhsbp%y,rhsbp%z,pp)
@@ -606,7 +618,14 @@ program cans
       call bounduvw_les(cbcvel,n,bcu,bcv,bcw,bcu_mag,bcv_mag,bcw_mag,nb,is_bound,lwm,l,dl,zc,zf,dzc,dzf, &
                         visc,hwm,index_wm,.true.,.true.,u,v,w)
 #else
-      call bounduvw(cbcvel,n,bcvel,nb,is_bound,.true.,dl,dzc,dzf,u,v,w)
+      call bounduvw(cbcvel,n,ng,lo,bcvel,nb,is_bound,.true.,dl,dzc,dzf,u,v,w)
+      ! DELETE LATER:
+      ! ! Insert subroutine that calculates delta flux = flux bottom - flux top, and adds the value to w at the top boundary
+      ! if(irk==3) then
+      !   print*, 'wflux top BEFORE addfluxdiff = ', SUM(w(1:n(1),1:n(2),n(3))/(n(1)*n(2)))*l(1)*l(2)
+      !   call addfluxdiff(w,n,l)
+      !   print*, 'wflux top AFTER addfluxdiff  = ', SUM(w(1:n(1),1:n(2),n(3))/(n(1)*n(2)))*l(1)*l(2)
+      ! end if
 #endif
       call updatep(n,dli,dzci,dzfi,alpha,pp,p)
 #if defined(_LES)
@@ -633,6 +652,18 @@ program cans
       tw = (MPI_WTIME()-twi)/3600.
       if(tw    >= tw_max  ) is_done = is_done.or..true.
     end if
+    !
+    ! DELETE LATER:
+    ! print *, 'istep = ', istep
+    ! print *, 'n(1) = ', n(1)
+    ! print *, 'n(2) = ', n(2)
+    ! print *, 'n(3) = ', n(3)
+    ! print *, 'l(1) = ', l(1)
+    ! print *, 'l(2) = ', l(2)
+    ! print *, 'l(3) = ', l(3)
+    ! print*, 'wflux bottom = ', SUM(w(1:n(1),1:n(2),0)/(n(1)*n(2)))*l(1)*l(2)
+    ! print*, 'wflux top    = ', SUM(w(1:n(1),1:n(2),n(3))/(n(1)*n(2)))*l(1)*l(2)
+    !
     if(icheck > 0.and.mod(istep,max(icheck,1)) == 0) then
       if(myid == 0) print*, 'Checking stability and divergence...'
 #if defined(_LES)
