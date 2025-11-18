@@ -15,7 +15,7 @@ module mod_bound
 #endif
   implicit none
   private
-  public boundp,bounduvw,updt_rhs_b,addfluxdiff
+  public boundp,bounduvw,boundscal,updt_rhs_b,addfluxdiff
 #if defined(_LES)
   public boundp_les,bounduvw_les,cmpt_rhs_b,initbc
 #endif
@@ -723,18 +723,13 @@ module mod_bound
                          call set_bc(cbc(1,2,3),1,2,nh,.true. ,bc(1,2,3),dl(2),w)
     end if
     impose_norm_bc = (.not.is_correc).or.(cbc(0,3,3)//cbc(1,3,3) == 'PP')
-    !if(is_bound(0,3)) then
-    !                     call set_bc(cbc(0,3,1),0,3,nh,.true. ,bc(0,3,1),dzc(0)   ,u)
-    !                     call set_bc(cbc(0,3,2),0,3,nh,.true. ,bc(0,3,2),dzc(0)   ,v)
-    !  if(impose_norm_bc) call set_bc(cbc(0,3,3),0,3,nh,.false.,bc(0,3,3),dzf(0)   ,w)
-    !end if
     if(is_bound(0,3)) then
                          call set_bc(cbc(0,3,1),0,3,nh,.true. ,bc(0,3,1),dzc(0),u)
                          call set_bc(cbc(0,3,2),0,3,nh,.true. ,bc(0,3,2),dzc(0),v)
       if(custom_bc) then
         if(cbc(0,3,3) == 'D') then
           d0    = 0.10_rp      ! diameter of the circular vent opening
-          wc    = 0.05_rp      ! peak inflow velocity at vent center (r=0)
+          wc    = bc(0,3,3)    ! peak inflow velocity at vent center (r=0)
           sigma = 0.05_rp      ! edge thickness of velocity profile; alternatively: sigma = kappa*d0 (kappa=0.125)
           kappa = 0.125_rp     ! dimensionless parameter controlling the edge steepness of the velocity profile
           !sigma = kappa*d0     ! alternative expression for sigma
@@ -809,6 +804,83 @@ module mod_bound
       call set_bc(cbc(1,3),1,3,nh,.true.,bc(1,3),dzc(n(3)),p)
     end if
   end subroutine boundp
+  !
+  subroutine boundscal(cbc,n,ng,lo,bc,nb,is_bound,dl,dzc,p)
+    !
+    ! imposes scalar boundary conditions
+    ! -> identical to boundp except for the custom inflow BC
+    !
+    implicit none
+    character(len=1), intent(in), dimension(0:1,3) :: cbc
+    integer , intent(in), dimension(3) :: n,ng,lo
+    real(rp), intent(in), dimension(0:1,3) :: bc
+    integer , intent(in), dimension(0:1,3) :: nb
+    logical , intent(in), dimension(0:1,3) :: is_bound
+    real(rp), intent(in), dimension(3 ) :: dl
+    real(rp), intent(in), dimension(0:) :: dzc
+    real(rp), intent(inout), dimension(0:,0:,0:) :: p
+    logical :: custom_bc
+    integer :: idir,nh
+    integer :: i,j
+    real(rp) :: xc,yc,r,d0,tc,sigma,kappa
+    real(rp) :: x_mid,y_mid
+    x_mid = 0.5_rp * dl(1) * ng(1)  ! Midpoint in physical x
+    y_mid = 0.5_rp * dl(2) * ng(2)  ! Midpoint in physical y
+    !
+    nh = 1
+    !
+#if !defined(_OPENACC)
+    do idir = 1,3
+      call updthalo(nh,halo(idir),nb(:,idir),idir,p)
+    end do
+#else
+    call updthalo_gpu(nh,cbc(0,:)//cbc(1,:)==['PP','PP','PP'],p)
+#endif
+    !
+    custom_bc = .true.
+    if(is_bound(0,1)) then
+      call set_bc(cbc(0,1),0,1,nh,.true.,bc(0,1),dl(1),p)
+    end if
+    if(is_bound(1,1)) then
+      call set_bc(cbc(1,1),1,1,nh,.true.,bc(1,1),dl(1),p)
+    end if
+    if(is_bound(0,2)) then
+      call set_bc(cbc(0,2),0,2,nh,.true.,bc(0,2),dl(2),p)
+     end if
+    if(is_bound(1,2)) then
+      call set_bc(cbc(1,2),1,2,nh,.true.,bc(1,2),dl(2),p)
+    end if
+    if(is_bound(0,3)) then
+      if(custom_bc) then
+        if(cbc(0,3) == 'D') then
+          d0    = 0.10_rp      ! diameter of the circular vent opening
+          !tc    = 1._rp        ! peak temperature at vent center (r=0)
+          tc    = bc(0,3)
+          sigma = 0.05_rp      ! edge thickness of velocity profile; alternatively: sigma = kappa*d0 (kappa=0.125)
+          kappa = 0.125_rp     ! dimensionless parameter controlling the edge steepness of the velocity profile
+          !sigma = kappa*d0     ! alternative expression for sigma
+          !
+          !$acc parallel loop collapse(2) default(present) async(1)
+          !$OMP parallel do   collapse(2) DEFAULT(shared)
+          do j=1-nh,size(p,2)-nh
+            yc = (j+lo(2)-1-.5)*dl(2)
+            do i=1-nh,size(p,1)-nh
+              xc = (i+lo(1)-1-.5)*dl(1)
+              r = sqrt( (xc - x_mid)**2 + (yc - y_mid)**2 )
+              p(i,j,0) = tc * (1.0_rp - tanh((r - d0)/sigma))/2.0_rp
+            end do
+          end do
+        else
+          print*, 'ERROR: Custom scalar BC only defined for Dirichlet type.'
+        end if
+      else
+        call set_bc(cbc(0,3),0,3,nh,.true.,bc(0,3),dzc(0) ,p)
+      end if
+    end if
+    if(is_bound(1,3)) then
+      call set_bc(cbc(1,3),1,3,nh,.true.,bc(1,3),dzc(n(3)),p)
+    end if
+  end subroutine boundscal
   !
   subroutine set_bc(ctype,ibound,idir,nh,centered,rvalue,dr,p)
     implicit none

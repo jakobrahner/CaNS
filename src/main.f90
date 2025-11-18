@@ -30,7 +30,7 @@ program cans
   use, intrinsic :: ieee_arithmetic, only: is_nan => ieee_is_nan
   use mpi
   use decomp_2d
-  use mod_bound          , only: boundp,bounduvw,updt_rhs_b,addfluxdiff
+  use mod_bound          , only: boundp,bounduvw,boundscal,updt_rhs_b,addfluxdiff
   use mod_chkdiv         , only: chkdiv
   use mod_chkdt          , only: chkdt
   use mod_common_mpi     , only: myid,ierr,dinfo_ptdma
@@ -502,7 +502,7 @@ program cans
   do iscal=1,nscal
     s => scalars(iscal)
     !$acc enter data copyin(s%val,s%dsdtrko) async(1)
-    call boundp(s%cbc,n,s%bc,nb,is_bound,dl,dzc,s%val)
+    call boundscal(s%cbc,n,ng,lo,s%bc,nb,is_bound,dl,dzc,s%val)
   end do
   !$acc wait
   !
@@ -579,7 +579,7 @@ program cans
           call solve_helmholtz(n,ng,hi,s%arrplan,s%normfft,-0.5*s%alpha*dtrk, &
                                s%lambdaxy,s%a,s%b,s%c,s%rhsb%x,s%rhsb%y,s%rhsb%z,is_bound,s%cbc,['c','c','c'],s%val)
         end if
-        call boundp(s%cbc,n,s%bc,nb,is_bound,dl,dzc,s%val)
+        call boundscal(s%cbc,n,ng,lo,s%bc,nb,is_bound,dl,dzc,s%val)
       end do
 #if defined(_LES)
       call rk_les(rkcoeff(:,irk),n,dli,dzci,dzfi,grid_vol_ratio_c,grid_vol_ratio_f,visc,dt,p, &

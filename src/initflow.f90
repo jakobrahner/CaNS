@@ -209,7 +209,7 @@ module mod_initflow
       is_mean = .true.
     case('vnt')
       d0    = 0.10_rp      ! diameter of the circular vent opening
-      wc    = 0.05_rp      ! peak inflow velocity at vent center (r=0)
+      wc    = bcvel(0,3,3) ! peak inflow velocity at vent center (r=0)
       sigma = 0.05_rp      ! edge thickness of velocity profile; alternatively: sigma = kappa*d0 (kappa=0.125)
       kappa = 0.125_rp     ! dimensionless parameter controlling the edge steepness of the velocity profile
       !sigma = kappa*d0     ! alternative expression for sigma
